@@ -51,7 +51,9 @@ class WSS {
     try {
       const content = await this.getQuillContent(documentid);
       socket.join(documentid);
-      socket.emit("document-editing", content);
+      const returnContent = 
+        content===null || (content.body==='""' && content?.title==='""') ? null : content
+      socket.emit("document-editing",returnContent)
     } catch (error) {
       console.error("Error fetching document:", error);
     }
@@ -68,7 +70,6 @@ class WSS {
       if (editorPart !== EditorPart.BODY && editorPart !== EditorPart.TITLE) {
         return;
       }
-
       const text = `UPDATE quill SET ${editorPart}=$2 where documentid=$1;`;
       const value = [documentid, content];
       await runQuery(text, value);
@@ -82,25 +83,27 @@ class WSS {
   private async getQuillContent(documentid: string) {
     const text = "SELECT * FROM quill WHERE documentid=$1;";
     const value = [documentid];
-    const getContent = await runQuery(text, value);
 
-    if (getContent.rowCount === 0) {
-      // No existing document, insert new empty title and body
-      const insertText =
-        'INSERT INTO quill(documentid, body, title) VALUES($1, $2, $3);';
-      const insertValue = [documentid, `""`, `""`];
-      await runQuery(insertText, insertValue);
-
-      return { body: `""`, title: `""` };
+    try {
+      const getContent = await runQuery(text, value);
+      if (getContent.rowCount === 0) {
+        // No existing document, insert new empty title and body
+        const insertText =
+          'INSERT INTO quill(documentid, body, title) VALUES($1, $2, $3);';
+        const insertValue = [documentid, `""`, `""`];
+        await runQuery(insertText, insertValue);
+        return { body: `""`, title: `""` };
+      }
+      const content = getContent.rows[0];
+      return (
+        content.body === "" && content.title=== ""
+          ? { body: `""`, title: `""` }
+          : { title: content.title, body: content.body }
+      )
+    } catch (error) {
+      console.log("Error getting content for quill : ",error)
+      return null
     }
-
-    const content = getContent.rows[0];
-    const thing =
-      content.body === ""
-        ? `socketId : ${documentid}`
-        : { title: content.title, body: content.body };
-
-    return thing;
   }
 }
 
